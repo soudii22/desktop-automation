@@ -7,7 +7,14 @@ from pathlib import Path
 import requests
 import json
 from requests.adapters import HTTPAdapter, Retry
-import os
+import keyboard
+import threading
+
+# -----------------------------
+# GLOBAL SAFETY FLAGS
+# -----------------------------
+pyautogui.FAILSAFE = True  # move mouse to top-left to abort
+STOP_REQUESTED = False
 
 # -----------------------------
 # Setup folders
@@ -15,11 +22,31 @@ import os
 screenshots_dir = Path("screenshots")
 screenshots_dir.mkdir(exist_ok=True)
 
+project_dir = Path.home() / "Desktop" / "tjm-project"
+project_dir.mkdir(exist_ok=True)
+
+# Set Tesseract executable path (Windows)
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# -----------------------------
+# ESC key listener
+# -----------------------------
+def listen_for_escape():
+    global STOP_REQUESTED
+    keyboard.wait("esc")
+    STOP_REQUESTED = True
+    print("🛑 ESC pressed. Automation stopped by user.")
+
+listener_thread = threading.Thread(target=listen_for_escape, daemon=True)
+listener_thread.start()
 
 # -----------------------------
 # Helper functions
 # -----------------------------
+def move_mouse_away():
+    screen_width, screen_height = pyautogui.size()
+    pyautogui.moveTo(screen_width // 2, screen_height // 2, duration=0.3)
+
 def take_screenshot():
     screenshot = pyautogui.screenshot()
     img = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
@@ -45,9 +72,6 @@ def find_notepad_icon(img, debug=True):
             if 0.8 < aspect_ratio < 1.2:
                 candidates.append((x, y, w, h))
 
-    if not candidates:
-        return None, None
-
     for (x, y, w, h) in candidates:
         label_y1 = y + h
         label_y2 = min(y + h + 40, h_img)
@@ -59,10 +83,13 @@ def find_notepad_icon(img, debug=True):
             continue
 
         gray_label = cv2.cvtColor(label_region, cv2.COLOR_BGR2GRAY)
-        _, label_thresh = cv2.threshold(gray_label, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        label_text = pytesseract.image_to_string(label_thresh).strip()
+        _, label_thresh = cv2.threshold(
+            gray_label, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
 
-        if "notepad" in label_text.lower():
+        label_text = pytesseract.image_to_string(label_thresh).strip().lower()
+
+        if "notepad" in label_text:
             center_x = x + w // 2
             center_y = y + h // 2
 
@@ -76,23 +103,27 @@ def find_notepad_icon(img, debug=True):
 
     return None, None
 
-def click_icon(center_x, center_y):
-    pyautogui.moveTo(center_x, center_y, duration=0.5)
+def click_icon(x, y):
+    pyautogui.moveTo(x, y, duration=0.4)
     pyautogui.doubleClick()
-    time.sleep(1.5)
-
-project_dir = Path.home() / "Desktop" / "tjm-project"
-project_dir.mkdir(exist_ok=True)
-
+    time.sleep(1.2)
+    move_mouse_away()
+# -----------------------------
+# API Fetch (with fallback)
+# -----------------------------
 def fetch_posts():
     posts = []
     try:
         session = requests.Session()
         retries = Retry(total=5, backoff_factor=1)
-        session.mount('https://', HTTPAdapter(max_retries=retries))
-        response = session.get("https://jsonplaceholder.typicode.com/posts", timeout=10)
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+
+        response = session.get(
+            "https://jsonplaceholder.typicode.com/posts", timeout=10
+        )
         response.raise_for_status()
         posts = response.json()[:10]
+
     except Exception as e:
         print(f"Failed to fetch posts from API: {e}")
         fallback_file = Path("sample_posts.json")
@@ -103,56 +134,78 @@ def fetch_posts():
         else:
             print("No posts available. Exiting.")
             exit()
+
     return posts
 
+# -----------------------------
+# Notepad automation helpers
+# -----------------------------
 def type_post_in_notepad(post):
     text = f"Title: {post['title']}\n\n{post['body']}"
     pyautogui.write(text, interval=0.01)
     time.sleep(0.5)
 
 def save_notepad_file(post_id):
-    pyautogui.hotkey('ctrl', 's')
+    pyautogui.hotkey("ctrl", "s")
     time.sleep(0.5)
-    filename = project_dir / f"post_{post_id}.txt"
+
+    base_name = f"post_{post_id}.txt"
+    filename = project_dir / base_name
+
+    if filename.exists():
+        counter = 1
+        while True:
+            candidate = project_dir / f"post_{post_id}_{counter}.txt"
+            if not candidate.exists():
+                filename = candidate
+                print(
+                    f"File already exists for post {post_id}. Saving as: {filename.name}"
+                )
+                break
+            counter += 1
+
     pyautogui.write(str(filename), interval=0.01)
-    pyautogui.press('enter')
+    pyautogui.press("enter")
     time.sleep(0.5)
 
 def close_notepad():
-    pyautogui.hotkey('alt', 'f4')
+    pyautogui.hotkey("alt", "f4")
     time.sleep(0.5)
 
 # -----------------------------
-# Main workflow
+# MAIN WORKFLOW
 # -----------------------------
 img, screenshot_path = take_screenshot()
 print(f"Desktop screenshot saved at: {screenshot_path}")
 
-center_x, center_y = find_notepad_icon(img)
-if center_x is not None and center_y is not None:
-    click_icon(center_x, center_y)
-    print(f"Notepad icon clicked at: ({center_x}, {center_y})")
-else:
-    print("Notepad icon not found. Make sure it's visible and labeled correctly.")
-
 posts = fetch_posts()
 
 for post in posts:
+    if STOP_REQUESTED:
+        break
+
     for attempt in range(3):
+        if STOP_REQUESTED:
+            break
+
         img, _ = take_screenshot()
         x, y = find_notepad_icon(img)
+
         if x is not None and y is not None:
             click_icon(x, y)
             break
         else:
-            print(f"Notepad not found. Retrying ({attempt+1}/3)...")
+            print(f"Notepad not found. Retrying ({attempt + 1}/3)...")
             time.sleep(1)
     else:
         print("Failed to find Notepad after 3 attempts. Skipping post.")
         continue
 
+    if STOP_REQUESTED:
+        break
+
     type_post_in_notepad(post)
-    save_notepad_file(post['id'])
+    save_notepad_file(post["id"])
     close_notepad()
 
-print("All posts processed successfully.")
+print("✅ Automation finished.")
