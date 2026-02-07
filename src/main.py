@@ -191,20 +191,22 @@ def close_notepad():
 # -----------------------------
 # MAIN WORKFLOW
 # -----------------------------
-img, screenshot_path = take_screenshot()
-print(f"Desktop screenshot saved at: {screenshot_path}")
-
+show_desktop()
 posts = fetch_posts()
 
 for post in posts:
     if STOP_REQUESTED:
         break
 
+    # Repeat screenshot + grounding before every post
     for attempt in range(3):
         if STOP_REQUESTED:
             break
 
+        # Take fresh screenshot for this post
         img, _ = take_screenshot()
+
+        # Find Notepad icon on this screenshot
         x, y = find_notepad_icon(img)
 
         if x is not None and y is not None:
@@ -214,13 +216,15 @@ for post in posts:
             print(f"Notepad not found. Retrying ({attempt + 1}/3)...")
             time.sleep(1)
     else:
-        print("Failed to find Notepad after 3 attempts. Skipping post.")
+        print("Failed to find Notepad after 3 attempts. Skipping this post.")
         continue
 
     if STOP_REQUESTED:
         break
 
+    # Type, save, and close Notepad for this post
     type_post_in_notepad(post)
     save_notepad_file(post["id"])
     close_notepad()
-print("Automation finished.")
+
+print("✅ Automation finished.")
