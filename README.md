@@ -2,7 +2,7 @@ Perfect! Here’s a concise, **interview-friendly README** version — short, pr
 
 ---
 
-# TJM Desktop Automation
+# Desktop Automation
 
 ## Overview
 
