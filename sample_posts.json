@@ -1,0 +1,12 @@
+[
+  {"id": 1, "title": "Post One", "body": "This is the body of post one."},
+  {"id": 2, "title": "Post Two", "body": "This is the body of post two."},
+  {"id": 3, "title": "Post Three", "body": "This is the body of post three."},
+  {"id": 4, "title": "Post Four", "body": "This is the body of post four."},
+  {"id": 5, "title": "Post Five", "body": "This is the body of post five."},
+  {"id": 6, "title": "Post Six", "body": "This is the body of post six."},
+  {"id": 7, "title": "Post Seven", "body": "This is the body of post seven."},
+  {"id": 8, "title": "Post Eight", "body": "This is the body of post eight."},
+  {"id": 9, "title": "Post Nine", "body": "This is the body of post nine."},
+  {"id": 10, "title": "Post Ten", "body": "This is the body of post ten."}
+]
