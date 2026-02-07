@@ -35,8 +35,7 @@ def listen_for_escape():
     global STOP_REQUESTED
     keyboard.wait("esc")
     STOP_REQUESTED = True
-    print("🛑 ESC pressed. Automation stopped by user.")
-
+    print("ESC pressed. Automation stopped by user.")
 listener_thread = threading.Thread(target=listen_for_escape, daemon=True)
 listener_thread.start()
 
@@ -46,6 +45,10 @@ listener_thread.start()
 def move_mouse_away():
     screen_width, screen_height = pyautogui.size()
     pyautogui.moveTo(screen_width // 2, screen_height // 2, duration=0.3)
+    
+def show_desktop():
+    pyautogui.hotkey("win", "d")
+    time.sleep(0.5)
 
 def take_screenshot():
     screenshot = pyautogui.screenshot()
@@ -65,29 +68,39 @@ def find_notepad_icon(img, debug=True):
     contours = _contours[0] if len(_contours) == 2 else _contours[1]
 
     candidates = []
+    # Icon size heuristics based on screen size to handle scaling.
+    min_dim = max(32, int(min(w_img, h_img) * 0.02))
+    max_dim = max(96, int(min(w_img, h_img) * 0.10))
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
-        if 40 < w < 120 and 40 < h < 120:
+        if min_dim <= w <= max_dim and min_dim <= h <= max_dim:
             aspect_ratio = w / float(h)
             if 0.8 < aspect_ratio < 1.2:
                 candidates.append((x, y, w, h))
 
     for (x, y, w, h) in candidates:
+        # Expand label search region to include wider and lower text.
+        pad_x = int(w * 0.5)
         label_y1 = y + h
-        label_y2 = min(y + h + 40, h_img)
-        label_x1 = x
-        label_x2 = min(x + w + 10, w_img)
+        label_y2 = min(y + h + int(h * 1.2) + 20, h_img)
+        label_x1 = max(0, x - pad_x)
+        label_x2 = min(x + w + pad_x, w_img)
 
         label_region = img[label_y1:label_y2, label_x1:label_x2]
         if label_region.size == 0:
             continue
 
         gray_label = cv2.cvtColor(label_region, cv2.COLOR_BGR2GRAY)
-        _, label_thresh = cv2.threshold(
-            gray_label, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        # Improve OCR reliability: scale up and try normal + inverted.
+        scaled = cv2.resize(
+            gray_label, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
         )
+        _, thresh = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        inv = cv2.bitwise_not(thresh)
 
-        label_text = pytesseract.image_to_string(label_thresh).strip().lower()
+        label_text = pytesseract.image_to_string(thresh).strip().lower()
+        if "notepad" not in label_text:
+            label_text = pytesseract.image_to_string(inv).strip().lower()
 
         if "notepad" in label_text:
             center_x = x + w // 2
@@ -96,6 +109,9 @@ def find_notepad_icon(img, debug=True):
             if debug:
                 debug_img = img.copy()
                 cv2.rectangle(debug_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.rectangle(
+                    debug_img, (label_x1, label_y1), (label_x2, label_y2), (255, 0, 0), 1
+                )
                 debug_path = screenshots_dir / "notepad_detected.png"
                 cv2.imwrite(str(debug_path), debug_img)
 
@@ -207,5 +223,4 @@ for post in posts:
     type_post_in_notepad(post)
     save_notepad_file(post["id"])
     close_notepad()
-
-print("✅ Automation finished.")
+print("Automation finished.")
