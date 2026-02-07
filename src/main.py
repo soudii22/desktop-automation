@@ -15,7 +15,6 @@ import os
 screenshots_dir = Path("screenshots")
 screenshots_dir.mkdir(exist_ok=True)
 
-# Set Tesseract executable path
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # -----------------------------
